@@ -1,0 +1,62 @@
+az group list
+
+version=$(az aks get-versions -l southeastasia --query 'orchestrators[-1].orchestratorVersion' -o tsv)
+
+az group create --name aks-workshop --location southeastasia
+
+az aks create --resource-group aks-workshop --name aks-workshop-cluster --location southeastasia --kubernetes-version $version --generate-ssh-keys
+
+az provider register --namespace Microsoft.ContainerService
+
+az provider list
+
+az aks get-credentials --resource-group aks-workshop --name aks-workshop-cluster
+
+
+kubectl apply -f helm-rbac.yaml
+
+helm init --service-account tiller
+
+helm install stable/mongodb --name orders-mongo --set mongodbUsername=orders-user,mongodbPassword=orders-password,mongodbDatabase=akschallenge
+
+kubectl create secret generic mongodb --from-literal=mongoHost="orders-mongo-mongodb.default.svc.cluster.local" --from-literal=mongoUser="orders-user" --from-literal=mongoPassword="orders-password"
+
+kubectapply -f captureorder-deployment.yaml
+
+kubectget pods -l app=captureorder -w
+
+kubectl apply -f captureorder-service.yaml
+
+kubectl get service captureorder -o jsonpath="{.status.loadBalancer.ingress[*].ip}" -w
+
+Output: 52.163.81.159
+
+curl -d '{"EmailAddress": "email@domain.com", "Product": "prod-1", "Total": 100}' -H "Content-Type: application/json" -X POST http://52.163.81.159/v1/order
+
+http://52.163.81.159/v1/order
+
+kubectl apply -f frontend-deployment.yaml
+
+kubectl get pods -l app=frontend -w
+
+kubectl apply -f frontend-service.yaml
+
+helm repo update
+
+helm upgrade --install ingress stable/nginx-ingress --namespace ingress
+
+kubectl get svc -n ingress ingress-nginx-ingress-controller -o jsonpath="{.status.loadBalancer.ingress[*].ip}"
+
+Output: 104.215.138.210
+
+kubectl apply -f frontend-ingress.yaml
+
+http://frontend.104.215.138.210.nip.io/
+
+helm install stable/cert-manager --name cert-manager --set ingressShim.defaultIssuerName=letsencrypt --set ingressShim.defaultIssuerKind=ClusterIssuer --version v0.5.2
+
+kubectl apply -f letsencrypt-clusterissuer.yaml
+
+kubectl apply -f frontend-ingress-tls.yaml
+
+kubectl describe certificate frontend
